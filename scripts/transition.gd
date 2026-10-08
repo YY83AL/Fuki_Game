@@ -57,12 +57,8 @@ static func make_hint(host: Node, text: String) -> Node2D:
 
 ## Порядок локаций для быстрых стрелок наверху экрана.
 const SCENE_LIST := [
-	["res://scenes/location_1.tscn", "Дом"],
-	["res://scenes/location_2.tscn", "Поле"],
-	["res://scenes/location_3.tscn", "Пляж"],
-	["res://scenes/location_4.tscn", "Город"],
-	["res://scenes/location_5.tscn", "Метро"],
 	["res://scenes/location_6.tscn", "Белый лист"],
+	["res://scenes/location_7.tscn", "Офис"],
 ]
 
 

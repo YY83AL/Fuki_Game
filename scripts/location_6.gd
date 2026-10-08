@@ -67,7 +67,7 @@ func _ready() -> void:
 	audio.call("set_rain", false)
 	wind.gust_started.connect(func(): audio.call("play_wind"))
 	_build_menu()
-	Transition.add_scene_arrows(self, 5)
+	Transition.add_scene_arrows(self, 0)
 	Transition.fade_in(self)
 
 
