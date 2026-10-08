@@ -697,8 +697,17 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 	var spine_t: float = lean + 0.012 * sin(t * 0.55) * (1.0 - act)
 	torso.rotation = 0.5 * spine_t - 0.03 * sin(phase) * act                  # таз
 	var chest_target: float = 0.5 * spine_t + 0.05 * sin(phase) * act + accel * 0.004
-	lean_v += ((chest_target - chest_rot) * 220.0 - lean_v * 15.0) * delta           # пружина: небольшой «перелёт» при остановке
-	chest_rot += lean_v * delta
+	# Пружина: небольшой «перелёт» при остановке. Считаем её мелкими шагами (не длиннее 1/120 с):
+	# одним длинным шагом на редких кадрах (примерно ниже 11 в секунду) она раскачивалась и опрокидывала корпус.
+	var spring_time: float = minf(delta, 0.5)
+	var spring_steps: int = clampi(int(ceil(spring_time * 120.0)), 1, 60)
+	var spring_dt: float = spring_time / spring_steps
+	for i_s in spring_steps:
+		lean_v += ((chest_target - chest_rot) * 220.0 - lean_v * 15.0) * spring_dt
+		chest_rot += lean_v * spring_dt
+	if not is_finite(chest_rot) or not is_finite(lean_v) or absf(chest_rot) > 0.9:   # страховка: грудь не наклоняется дальше ~50°
+		chest_rot = clampf(chest_rot if is_finite(chest_rot) else 0.0, -0.9, 0.9)
+		lean_v = 0.0
 	chest.rotation = chest_rot
 	torso.scale = Vector2(1.0 / sqrt(squash), squash)
 	chest.scale.x = 1.0 + 0.035 * cos(phase) * act
