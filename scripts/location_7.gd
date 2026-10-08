@@ -2,9 +2,8 @@ extends Node2D
 ## Локация 7: ночной офис. Три слоя с параллаксом, камера следует за Фуки.
 ##   far  — город за окнами (самый дальний, движется медленнее всех);
 ##   mid  — стены, окна, стеллаж и тумба;
-##   near — столы, компьютеры и стопки бумаг (на одной глубине с полом, по которому идёт Фуки).
+##   near — столы, компьютеры, стопки бумаг и кошка за столом (на одной глубине с полом, по которому идёт Фуки).
 ## За окнами гроза: молнии сверкают сами, дождь включается кнопкой.
-## Кошка за столом с исходной картинки лежит отдельной картинкой, её можно выключить галочкой.
 ## Клавиши: 4 — звуки, 5 или M — музыка, 7 — дождь за окном.
 
 signal flash_started   ## Молния сверкнула (по этому сигналу играет гром)
@@ -15,7 +14,6 @@ const ART_SCALE := 0.75          ## Картинки нарисованы в 192
 const WORLD_W := 1440.0
 const FLOOR_Y := 690.0           ## Верх тёмной полосы пола
 const PLAYER_SIZE := 0.55        ## Размер Фуки в офисе (было 0.48, увеличено на 15%)
-const DESK_CAT_POS := Vector2(430.0, 668.0)   ## Место кошки за столом, в пикселях картинки
 const FAR_SPEED := 0.45
 const MID_SPEED := 0.85
 
@@ -30,7 +28,6 @@ const WINDOWS := [[1200.0, 1450.0], [1546.0, 1796.0]]
 ## Где на картинке города чистое небо: [левый край, правый край, самая низкая точка молнии].
 const SKY_ZONES := [[1262.0, 1400.0, 360.0], [1505.0, 1602.0, 430.0]]
 
-@export var show_desk_cat: bool = true          ## Показывать кошку за столом (с исходной картинки)
 @export_group("Гроза за окном")
 @export var lightning: bool = true              ## Молнии сверкают
 @export var min_interval: float = 5.0           ## Минимальная пауза между молниями, секунды
@@ -45,7 +42,6 @@ var cam: Camera2D
 var layers: Array = []           ## [узел, множитель движения, его обычное место по x]
 var far_sprite: Sprite2D
 var room_sprites: Array[Sprite2D] = []   ## Всё, что внутри комнаты: стены, мебель, кошка за столом
-var desk_cat: Sprite2D
 var rain_nodes: Array[CPUParticles2D] = []
 var sky_light: ColorRect         ## Свет вспышки поверх города: прибавляется к картинке
 var bolt_glow: Line2D
@@ -91,19 +87,10 @@ func _ready() -> void:
 	_update_layers()
 
 
-## Слои ставятся под Фуки: город, дождь за стеклом, стены, кошка за столом и мебель.
+## Слои ставятся под Фуки: город, дождь за стеклом, стены и мебель.
 func _build_layers() -> void:
 	var index: int = 0
 	for l in LAYERS:
-		if l[0] == "near":
-			desk_cat = _sprite("cat")
-			desk_cat.name = "DeskCat"
-			desk_cat.position = DESK_CAT_POS * ART_SCALE
-			desk_cat.visible = show_desk_cat
-			move_child(desk_cat, index)
-			index += 1
-			layers.append([desk_cat, l[1], desk_cat.position.x])   # кошка едет вместе с мебелью
-			room_sprites.append(desk_cat)
 		var sp := _sprite(l[0])
 		sp.name = "Layer_" + l[0]
 		move_child(sp, index)

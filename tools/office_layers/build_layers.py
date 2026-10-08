@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Режет картинку офиса на слои для параллакса: far (город за окном), mid (стены и шкафы),
-near (мебель) и отдельно кошку за столом. Запуск: python3 build_layers.py src.png out_dir"""
+near (мебель вместе с кошкой за столом и её стулом). Запуск: python3 build_layers.py src.png out_dir"""
 import sys
 import numpy as np
 import cv2
@@ -98,15 +98,16 @@ lab, n = ndimage.label(sil)
 if n:
     sizes = ndimage.sum(sil, lab, range(1, n + 1))
     sil = lab == (1 + int(np.argmax(sizes)))
-# вместе с кошкой вырезаем усы (они тоньше и длиннее силуэта) и спинку стула за ней
-cat_zone = (ndimage.binary_dilation(sil, iterations=24) & rect(424, 768, 536, 875)) | rect(430, 806, 560, 875)
+# вместе с кошкой берём усы (они тоньше и длиннее силуэта) и спинку стула за ней.
+# Выше стула — только сама голова с узкой каймой: свечение вокруг неё остаётся на стене.
+cat_zone = (ndimage.binary_dilation(sil, iterations=4) & rect(424, 768, 536, 875)) | rect(430, 806, 560, 875)
 cat_zone &= ~near
 # розовая строка там, где кофта касается столешницы, запеклась в мебель — возвращаем цвет стола
-src_img = img.copy()                               # исходник без правок — для вырезания кошки
+src_img = img.copy()                               # исходник без правок — по нему вырезается кошка
 edge = rect(440, 874, 520, 877) & (R > G + 6)
 for y_, x_ in zip(*np.where(edge)):
     img[y_, x_] = img[y_, 660]
-near &= ~rect(440, 872, 520, 874)                  # выше столешницы здесь кошка, а не стол
+near &= ~rect(452, 872, 520, 874)                  # выше столешницы здесь кошка, а не стол (кружка кончается на x=451)
 cat_zone |= rect(450, 872, 512, 876)
 R, G, B = img[:, :, 0], img[:, :, 1], img[:, :, 2]
 
@@ -268,7 +269,7 @@ rows_ok = np.where(inner.any(axis=1))[0]
 far[:rows_ok[0]] = far[rows_ok[0]]
 far[rows_ok[-1] + 1:] = far[rows_ok[-1]]
 
-# ------------------------------------------------------------------ кошка: отдельная картинка
+# ------------------------------------------------------------------ кошка и её стул: часть ближнего слоя
 under = mid.copy()
 desk_part = cat_zone & near                        # там, где кошка заходит на край столешницы
 under[desk_part] = img[desk_part]
@@ -276,14 +277,17 @@ diff = np.abs(src_img - under).max(axis=2)
 a_cat = np.clip((diff - 5.0) / 26.0, 0, 1) * cat_zone
 a_cat[sil] = np.maximum(a_cat[sil], np.clip((diff[sil] - 2.0) / 10.0, 0, 1))
 a_cat[ndimage.binary_erosion(sil, iterations=2)] = 1.0
-ys, xs = np.where(a_cat > 0.02)
-cy0, cy1, cx0, cx1 = ys.min() - 2, ys.max() + 3, xs.min() - 2, xs.max() + 3
-ac_ = a_cat[cy0:cy1, cx0:cx1]
-rgb = (src_img[cy0:cy1, cx0:cx1] - (1 - ac_[:, :, None]) * under[cy0:cy1, cx0:cx1]) / np.maximum(ac_[:, :, None], 0.05)
-cat = np.dstack([rgb.clip(0, 255), ac_ * 255]).astype(np.uint8)
+a_cat[a_cat < 0.02] = 0.0
+ac_ = a_cat[:, :, None]
+cat_rgb = ((src_img - (1 - ac_) * under) / np.maximum(ac_, 0.05)).clip(0, 255)
 
 # ------------------------------------------------------------------ ближний слой
-near_rgba = np.dstack([img, near * 255.0])
+# мебель, а в просветах между ней — кошка со стулом (там, где кофта касается стола, кошка поверх)
+na = near[:, :, None] * 1.0
+out_a = ac_ + na * (1 - ac_)
+near_rgb = np.where(out_a > 0, (cat_rgb * ac_ + img * na * (1 - ac_)) / np.maximum(out_a, 1e-6), img)
+near_rgba = np.dstack([near_rgb, out_a[:, :, 0] * 255.0])
+near_rgba[FLOOR:, :, :3] = img[FLOOR:]
 near_rgba[FLOOR:, :, 3] = 255.0                  # пол целиком в ближнем слое
 
 
@@ -297,22 +301,16 @@ TOP, BOTTOM = 100, 1060                           # видимая часть к
 save("far.png", far[TOP:BOTTOM])
 save("mid.png", np.dstack([mid, alpha_mid * 255.0])[TOP:BOTTOM])
 save("near.png", near_rgba[TOP:BOTTOM])
-save("cat.png", cat)
-print("кошка: левый верхний угол на картинке", (int(cx0), int(cy0)), "размер", cat.shape[1], cat.shape[0])
-print("положение кошки в сцене (после обрезки сверху): x=%d y=%d" % (cx0, cy0 - TOP))
 
 # ------------------------------------------------------------------ проверки
 np.save(f"{OUT}/_masks.npy", np.stack([near, cat_zone, glass, mull]).astype(np.uint8))
 full_far, full_mid, full_near = far, np.dstack([mid, alpha_mid]), near_rgba
 
 
-def compose(shift_far=0, shift_near=0, with_cat=True):
+def compose(shift_far=0, shift_near=0):
     out = np.roll(full_far, shift_far, axis=1).copy()
     a = full_mid[:, :, 3:4]
     out = out * (1 - a) + full_mid[:, :, :3] * a
-    if with_cat:
-        ca = cat[:, :, 3:4] / 255.0
-        out[cy0:cy1, cx0:cx1] = out[cy0:cy1, cx0:cx1] * (1 - ca) + cat[:, :, :3] * ca
     nr = np.roll(full_near, shift_near, axis=1)
     a = nr[:, :, 3:4] / 255.0
     return out * (1 - a) + nr[:, :, :3] * a
@@ -322,8 +320,8 @@ c0 = compose()
 err = np.abs(c0 - src_img).max(axis=2)
 print("сборка без сдвига против исходника: макс. разница %.1f, пикселей с разницей > 8: %d" % (err.max(), int((err > 8).sum())))
 save("_check_same.png", c0)
-save("_check_shift.png", compose(shift_far=90, shift_near=-20))
-save("_check_nocat.png", compose(with_cat=False))
+save("_check_shift.png", compose(shift_far=90, shift_near=-32))
+save("_check_shift_back.png", compose(shift_far=-90, shift_near=32))
 save("_check_mid_on_pink.png", np.array([255, 0, 255.0]) * (1 - alpha_mid[:, :, None]) + mid * alpha_mid[:, :, None])
-save("_check_near_on_pink.png", np.array([255, 0, 255.0]) * (1 - near[:, :, None] * 1.0) + img * near[:, :, None])
+save("_check_near_on_pink.png", np.array([255, 0, 255.0]) * (1 - out_a) + near_rgb * out_a)
 save("_check_err.png", np.dstack([err * 8] * 3))
