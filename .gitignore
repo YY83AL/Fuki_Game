@@ -1,0 +1,11 @@
+# Кэш и служебное Godot
+.godot/
+*.translation
+# Резервные копии (теперь их заменяет Git)
+_backup_*/
+# Временные файлы
+*.tmp
+.DS_Store
+# Сборки игры
+export/
+build/

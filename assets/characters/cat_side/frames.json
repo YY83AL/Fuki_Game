@@ -1,0 +1,58 @@
+{
+ "canvas": [
+  300,
+  330
+ ],
+ "anchor_ground": [
+  150,
+  302
+ ],
+ "frames": {
+  "side_00": "idle",
+  "side_01": "walk_1",
+  "side_02": "walk_2",
+  "side_03": "walk_3",
+  "side_04": "walk_4",
+  "side_05": "walk_5",
+  "side_06": "run_1",
+  "side_07": "run_2",
+  "side_08": "run_3",
+  "side_09": "run_4",
+  "side_10": "run_5",
+  "side_11": "run_6",
+  "side_12": "run_7",
+  "side_13": "crouch",
+  "side_14": "jump_up",
+  "side_15": "jump_air",
+  "side_16": "land",
+  "side_17": "idle2"
+ },
+ "groups": {
+  "walk": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "run": [
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12
+  ],
+  "jump": [
+   13,
+   14,
+   15,
+   16
+  ],
+  "idle": [
+   0,
+   17
+  ]
+ }
+}

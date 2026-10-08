@@ -1,0 +1,180 @@
+[gd_scene load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://scripts/location.gd" id="1_loc"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/location_1.png" id="2_bg"]
+[ext_resource type="PackedScene" path="res://scenes/player_red.tscn" id="9_playerb"]
+[ext_resource type="Script" path="res://scripts/leaves.gd" id="4_leaves"]
+[ext_resource type="Script" path="res://scripts/leaves_front.gd" id="5_front"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/location_1_outside.png" id="6_outside"]
+[ext_resource type="Texture2D" path="res://assets/fx/raindrop.png" id="7_drop"]
+[ext_resource type="Script" path="res://scripts/storm.gd" id="8_storm"]
+[ext_resource type="Script" path="res://scripts/parallax_outside.gd" id="10_par"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/outside/sky.png" id="11_sky"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/outside/far.png" id="12_far"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/outside/mid.png" id="13_mid"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/outside/near.png" id="14_near"]
+
+[node name="Location1" type="Node2D"]
+script = ExtResource("1_loc")
+
+[node name="Outside" type="Node2D" parent="."]
+script = ExtResource("10_par")
+
+[node name="OldFlat" type="Sprite2D" parent="Outside"]
+visible = false
+texture = ExtResource("6_outside")
+centered = false
+
+[node name="Sky" type="Sprite2D" parent="Outside"]
+texture = ExtResource("11_sky")
+centered = false
+
+[node name="Far" type="Sprite2D" parent="Outside"]
+texture = ExtResource("12_far")
+centered = false
+
+[node name="Mid" type="Sprite2D" parent="Outside"]
+texture = ExtResource("13_mid")
+centered = false
+
+[node name="Near" type="Sprite2D" parent="Outside"]
+texture = ExtResource("14_near")
+centered = false
+
+[node name="Rain" type="Node2D" parent="."]
+
+[node name="RainWindow1" type="CPUParticles2D" parent="Rain"]
+position = Vector2(439, 158)
+amount = 89
+lifetime = 0.35
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(92, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="RainWindow2" type="CPUParticles2D" parent="Rain"]
+position = Vector2(1635, 170)
+amount = 29
+lifetime = 0.2
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(78, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="RainWindow3" type="CPUParticles2D" parent="Rain"]
+position = Vector2(1915, 170)
+amount = 29
+lifetime = 0.2
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(73, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="RainWindow4" type="CPUParticles2D" parent="Rain"]
+position = Vector2(2320, 170)
+amount = 29
+lifetime = 0.2
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(73, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="RainWindow5" type="CPUParticles2D" parent="Rain"]
+position = Vector2(2579, 171)
+amount = 29
+lifetime = 0.2
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(77, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="RainWindow6" type="CPUParticles2D" parent="Rain"]
+position = Vector2(2859, 170)
+amount = 29
+lifetime = 0.2
+preprocess = 1.0
+texture = ExtResource("7_drop")
+particle_flag_align_y = true
+emission_shape = 3
+emission_rect_extents = Vector2(73, 2)
+direction = Vector2(0.18, 1)
+spread = 3.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 620.0
+initial_velocity_max = 820.0
+scale_amount_min = 0.6
+scale_amount_max = 1.1
+color = Color(0.78, 0.88, 1, 0.75)
+
+[node name="Background" type="Sprite2D" parent="."]
+texture = ExtResource("2_bg")
+centered = false
+
+[node name="Leaves" type="Node2D" parent="."]
+script = ExtResource("4_leaves")
+
+[node name="Player" parent="." instance=ExtResource("9_playerb")]
+position = Vector2(400, 650)
+
+[node name="LeavesFront" type="Node2D" parent="."]
+script = ExtResource("5_front")
+
+[node name="Lightning" type="CanvasLayer" parent="."]
+layer = 5
+
+[node name="Flash" type="ColorRect" parent="Lightning"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.82, 0.9, 1, 0)
+
+[node name="Storm" type="Node2D" parent="."]
+script = ExtResource("8_storm")

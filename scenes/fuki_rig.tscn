@@ -1,0 +1,70 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://scripts/fuki_rig.gd" id="1_rig"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/tail.png" id="2_tail"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/leg_back.png" id="3_legb"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/torso.png" id="4_torso"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/arm_l.png" id="5_arml"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/arm_r.png" id="6_armr"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/head.png" id="7_head"]
+[ext_resource type="Texture2D" path="res://assets/characters/parts/leg_front.png" id="8_legf"]
+
+[node name="FukiRig" type="Node2D"]
+scale = Vector2(0.5, 0.5)
+script = ExtResource("1_rig")
+
+[node name="Tail" type="Node2D" parent="."]
+position = Vector2(-51, -108)
+
+[node name="Sprite2D" type="Sprite2D" parent="Tail"]
+texture = ExtResource("2_tail")
+centered = false
+position = Vector2(-112, -412)
+
+[node name="LegBack" type="Node2D" parent="."]
+position = Vector2(-37, -68)
+
+[node name="Sprite2D" type="Sprite2D" parent="LegBack"]
+texture = ExtResource("3_legb")
+centered = false
+position = Vector2(-126, -452)
+
+[node name="Torso" type="Node2D" parent="."]
+position = Vector2(27, -80)
+
+[node name="Sprite2D" type="Sprite2D" parent="Torso"]
+texture = ExtResource("4_torso")
+centered = false
+position = Vector2(-190, -440)
+
+[node name="ArmL" type="Node2D" parent="Torso"]
+position = Vector2(-68, -108)
+
+[node name="Sprite2D" type="Sprite2D" parent="Torso/ArmL"]
+texture = ExtResource("5_arml")
+centered = false
+position = Vector2(-122, -332)
+
+[node name="ArmR" type="Node2D" parent="Torso"]
+position = Vector2(75, -108)
+
+[node name="Sprite2D" type="Sprite2D" parent="Torso/ArmR"]
+texture = ExtResource("6_armr")
+centered = false
+position = Vector2(-265, -332)
+
+[node name="Head" type="Node2D" parent="Torso"]
+position = Vector2(0, -204)
+
+[node name="Sprite2D" type="Sprite2D" parent="Torso/Head"]
+texture = ExtResource("7_head")
+centered = false
+position = Vector2(-190, -236)
+
+[node name="LegFront" type="Node2D" parent="."]
+position = Vector2(77, -92)
+
+[node name="Sprite2D" type="Sprite2D" parent="LegFront"]
+texture = ExtResource("8_legf")
+centered = false
+position = Vector2(-240, -428)
