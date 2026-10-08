@@ -15,7 +15,7 @@ extends Node2D
 @export var jump_windup: float = 0.09     ## Присед перед прыжком, секунд (0 — прыжок мгновенный)
 @export var gravity: float = 2200.0        ## Как быстро Фуки падает обратно
 @export var x_min: float = 90.0            ## Левая граница локации
-@export var x_max: float = 3014.0          ## Правая граница (задаётся в location.gd по ширине фона)
+@export var x_max: float = 3014.0          ## Правая граница (задаётся в скрипте локации по ширине фона)
 @export var y_min: float = 590.0           ## Дальний край пола (чуть ниже плинтуса)
 @export var y_max: float = 700.0           ## Ближний край пола
 @export var scale_back: float = 0.88       ## Размер Фуки у дальнего края пола
@@ -162,7 +162,7 @@ func _update_depth_scale() -> void:
 
 
 func _animate(delta: float) -> void:
-	# Скелетная анимация живёт в fuki_rig.gd: здесь только передаём ей скорость и направление.
+	# Анимация куклы живёт в fuki_puppet.gd: здесь только передаём ей скорость и направление.
 	var face: float = 0.0
 	if velocity.x > 5.0:
 		face = 1.0
