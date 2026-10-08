@@ -9,3 +9,4 @@ _backup_*/
 # Сборки игры
 export/
 build/
+_backups/
