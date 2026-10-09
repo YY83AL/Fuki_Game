@@ -789,7 +789,7 @@ def build(reader, out_path):
     open(out_path, "w", encoding="utf-8").write("\n".join(L) + "\n")
 
     for pname in sorted(pivots):
-        if pname not in used_pivots and pname != "pivot_ground":
+        if pname not in used_pivots and pname != "pivot_ground" and not pname.startswith("pivot_toe_"):   # носок стопы: место перегиба, своей части у него нет
             notes.append("Точка «%s» есть, но части для неё нет." % pname)
     print("Готово: %s" % out_path)
     print("Частей: %d, точек вращения: %d, вершин всего: %d" % (len(nodes), len(pivots), total_pts))

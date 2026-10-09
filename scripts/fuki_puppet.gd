@@ -2,11 +2,14 @@ class_name FukiPuppet
 extends Node2D
 
 signal foot_down(side: int, power: float)
+signal pose_finished                            ## Движение из редактора поз доиграло до конца
 ## Красная кошка — кукла из частей (вид 3/4, для ходьбы влево и вправо; влево — зеркально).
 ## Подключается к Player как и другие куклы: animate(delta, скорость, направление, в_воздухе).
 ## Части лежат в assets/characters/red_cat/*.png (нарисованы лицом вправо). Земля — точка между сапогами.
 ## Движение считается кодом: ходьба и бег — шаг с подъёмом ноги, раскачка рук, пританцовывание корпуса,
 ## подол пальто тянется назад; в прыжке — присед, взлёт с поднятыми руками, полёт, приземление.
+## Поверх этого кукла умеет вставать в позы, поставленные руками в редакторе поз (pose_editor):
+## см. переменные pose_* и функции pose_hold(), pose_play(), play_pose() ниже.
 
 @export var frame_scale: float = 0.38           ## Размер кошки (1 — как на листе, 660 px высотой)
 @export var walk_hz: float = 1.7                ## Полных шагов (левая+правая нога) в секунду при ходьбе
@@ -128,6 +131,32 @@ var leg_apart: float = 0.0
 var leg_tuck: float = 0.0
 var boot_drop: float = 0.0
 var rise: float = 0.0
+
+# --- поза из редактора поз ---
+# Имена этих переменных записаны в файлах движений (animations/fuki/*.tres) — не переименовывать.
+const POSE_KEYS: Array[String] = [
+	"pose_pelvis", "pose_torso", "pose_chest", "pose_head",
+	"pose_arm_l", "pose_elbow_l", "pose_arm_r", "pose_elbow_r",
+	"pose_foot_l", "pose_foot_l_rot", "pose_foot_r", "pose_foot_r_rot",
+]
+const POSE_DIR := "res://animations/fuki/"
+var pose_pelvis: Vector2 = Vector2.ZERO     ## Таз: сдвиг от обычного места (x — вперёд, y — вниз), в точках листа
+var pose_torso: float = 0.0                 ## Наклон таза и всего корпуса, радианы
+var pose_chest: float = 0.0                 ## Наклон груди относительно таза
+var pose_head: float = 0.0                  ## Наклон головы относительно груди
+var pose_arm_l: float = 0.0                 ## Ближняя рука: поворот в плече
+var pose_elbow_l: float = -0.05             ## Ближняя рука: сгиб в локте
+var pose_arm_r: float = -0.05               ## Дальняя рука: поворот в плече
+var pose_elbow_r: float = -0.05             ## Дальняя рука: сгиб в локте
+var pose_foot_l: Vector2 = Vector2.ZERO     ## Ближняя стопа: x — вперёд от своего места, y — высота над полом
+var pose_foot_l_rot: float = 0.0            ## Ближняя стопа: наклон (плюс — на носок, минус — на пятку)
+var pose_foot_r: Vector2 = Vector2.ZERO     ## Дальняя стопа
+var pose_foot_r_rot: float = 0.0
+var pose_weight: float = 0.0                ## 0 — обычное движение, 1 — кукла целиком в позе
+var pose_target: float = 0.0
+var pose_in: float = 0.12                   ## За сколько секунд кукла входит в позу
+var pose_out: float = 0.25                  ## За сколько секунд возвращается к обычному движению
+var pose_player: AnimationPlayer
 
 
 func _spr(file: String, pos: Vector2, origin: Vector2) -> Sprite2D:
@@ -667,12 +696,30 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 			pelvis = maxf(pelvis, need)
 	pelvis = clampf(pelvis, 0.0, 40.0)
 	var ty: float = ty_pre + pelvis
+	# --- поза из редактора поз: подмешивается к обычному движению с весом pose_weight ---
+	if pose_weight != pose_target:
+		var blend_time: float = pose_in if pose_target > pose_weight else pose_out
+		pose_weight = move_toward(pose_weight, pose_target, delta / maxf(blend_time, 0.001))
+	var pw: float = smoothstep(0.0, 1.0, pose_weight)
+	var px: float = pose_pelvis.x * pw
+	if pw > 0.0:
+		var pfeet: Array[Vector2] = [pose_foot_l, pose_foot_r]
+		var prots: Array[float] = [pose_foot_l_rot, pose_foot_r_rot]
+		var ty_pose: float = pose_pelvis.y
+		for i in 2:
+			var pa: Vector2 = pose_ankle(pfeet[i], prots[i])
+			var pdx: float = clampf(pa.x - pose_pelvis.x, -LEG_REACH * 0.96, LEG_REACH * 0.96)
+			# стопы главнее таза: если нога не дотягивается до своей точки, таз опускается
+			ty_pose = maxf(ty_pose, LEG_LEN + pa.y - sqrt(LEG_REACH * LEG_REACH - pdx * pdx))
+			anks[i] = anks[i].lerp(pa, pw)
+			fang[i] = lerpf(fang[i], prots[i], pw)
+		ty = lerpf(ty, minf(ty_pose, 125.0), pw)
 	for i in 2:
 		var leg: Node2D = legs[i]
 		var base: Vector2 = (HIP_L if i == 0 else HIP_R) - Vector2(OX, OY)
 		var side: float = -1.0 if i == 0 else 1.0
 		var air_rot: float = (side * leg_apart + (-0.18 if i == 0 else 0.30) * leg_tuck) * -1.0
-		var tgt := Vector2(anks[i].x, LEG_LEN + anks[i].y - ty - leg_tuck * 62.0)
+		var tgt := Vector2(anks[i].x - px, LEG_LEN + anks[i].y - ty - leg_tuck * 62.0)
 		var ca: float = cos(air_rot)
 		var sa: float = sin(air_rot)
 		tgt = Vector2(tgt.x * ca - tgt.y * sa, tgt.x * sa + tgt.y * ca)
@@ -684,7 +731,7 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 		var tpos: Vector2 = tgt.normalized() * d
 		var sh: float = atan2(-(tpos.x - kn.x), tpos.y - kn.y)
 		leg.rotation = th
-		leg.position = base + Vector2(0.0, ty)
+		leg.position = base + Vector2(px, ty)
 		boots[i].rotation = sh - th
 		feet[i].rotation = fang[i] - sh
 		_skin(i)
@@ -692,11 +739,15 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 	var front: int = 0 if cos(phase) > 0.0 else 1
 	if act > 0.2 and legs[front].get_index() < legs[1 - front].get_index():
 		legs[front].get_parent().move_child(legs[front], legs[1 - front].get_index())
+	if pw > 0.5 and absf(pose_foot_l.y - pose_foot_r.y) > 2.0:      # в позе сверху рисуется поднятая нога
+		var up_leg: int = 0 if pose_foot_l.y > pose_foot_r.y else 1
+		if legs[up_leg].get_index() < legs[1 - up_leg].get_index():
+			legs[up_leg].get_parent().move_child(legs[up_leg], legs[1 - up_leg].get_index())
 	# --- корпус ---
-	torso.position = HIP - Vector2(OX, OY) + Vector2(0.0, ty)
+	torso.position = HIP - Vector2(OX, OY) + Vector2(px, ty)
 	var spine_t: float = lean + 0.012 * sin(t * 0.55) * (1.0 - act)
-	torso.rotation = 0.5 * spine_t - 0.03 * sin(phase) * act                  # таз
-	var chest_target: float = 0.5 * spine_t + 0.05 * sin(phase) * act + accel * 0.004
+	torso.rotation = lerpf(0.5 * spine_t - 0.03 * sin(phase) * act, pose_torso, pw)                  # таз
+	var chest_target: float = lerpf(0.5 * spine_t + 0.05 * sin(phase) * act + accel * 0.004, pose_chest, pw)
 	# Пружина: небольшой «перелёт» при остановке. Считаем её мелкими шагами (не длиннее 1/120 с):
 	# одним длинным шагом на редких кадрах (примерно ниже 11 в секунду) она раскачивалась и опрокидывала корпус.
 	var spring_time: float = minf(delta, 0.5)
@@ -712,7 +763,7 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 	torso.scale = Vector2(1.0 / sqrt(squash), squash)
 	chest.scale.x = 1.0 + 0.035 * cos(phase) * act
 	chest.position = WAIST + Vector2(0.0, 0.0)
-	torso.position.x += 3.0 * sin(t * 0.55) * (1.0 - act)
+	torso.position.x += 3.0 * sin(t * 0.55) * (1.0 - act) * (1.0 - pw)
 	# дыхание в покое
 	var calm: float = 1.0 - act
 	torso.scale.y *= 1.0 + 0.012 * sin(t * 2.2) * calm
@@ -722,23 +773,25 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 		# рукава болтаются на руках: рука качается мало, остальное делает ткань; наружу за плащ не выходят
 		var cl_l: float = sw + 0.6 * (arm_out - arm_fwd) - 0.08 * act + 0.025 * sin(t * 1.6) * calm
 		var cl_r: float = -sw + 0.6 * (-arm_out - arm_fwd) + 0.08 * act - 0.025 * sin(t * 1.6 + 1.0) * calm
-		sleeves[0].rotation = clampf(cl_l, -0.30, 0.15)
-		sleeves[1].rotation = clampf(cl_r - 0.05, -0.22, 0.20)
+		sleeves[0].rotation = lerpf(clampf(cl_l, -0.30, 0.15), pose_arm_l, pw)
+		sleeves[1].rotation = lerpf(clampf(cl_r - 0.05, -0.22, 0.20), pose_arm_r, pw)
 		if sleeve_cloths.size() == 2:
 			for j in 2:
 				var rj: float = sleeves[j].rotation
 				var eb: float = 0.10 * act + (0.85 if running else 0.14) * act * clampf(-rj / 0.3, 0.0, 1.0) + 0.05 * calm
-				sleeve_cloths[j].elbow_ang = _sm(sleeve_cloths[j].elbow_ang, -eb, 14.0, delta)
+				var eb_pose: float = lerpf(-eb, pose_elbow_l if j == 0 else pose_elbow_r, pw)
+				sleeve_cloths[j].elbow_ang = _sm(sleeve_cloths[j].elbow_ang, eb_pose, 14.0, delta)
+				sleeve_cloths[j].clamp_node = null if pw > 0.01 else chest     # в позе рукав может выйти за контур плаща
 	else:
 		# голые руки: размах шире, локоть сгибается вперёд на махе вперёд
 		var swn: float = sw * (2.0 if not running else 1.6)
 		var rl: float = swn * (1.0 if swn < 0.0 else 0.55) + 0.10 + arm_out - arm_fwd + 0.03 * sin(t * 1.6) * calm
 		var rr: float = -swn * (1.0 if swn > 0.0 else 0.55) - 0.10 - arm_out - arm_fwd - 0.03 * sin(t * 1.6 + 1.0) * calm
-		sleeves[0].rotation = rl
-		sleeves[1].rotation = rr
+		sleeves[0].rotation = lerpf(rl, pose_arm_l, pw)
+		sleeves[1].rotation = lerpf(rr, pose_arm_r, pw)
 		var base_f: float = 0.12 + (1.6 if running else 0.4) * act
-		forearms[0].rotation = -(base_f + 0.7 * maxf(0.0, -rl) * act)
-		forearms[1].rotation = -(base_f + 0.7 * maxf(0.0, -rr) * act)
+		forearms[0].rotation = lerpf(-(base_f + 0.7 * maxf(0.0, -rl) * act), pose_elbow_l, pw)
+		forearms[1].rotation = lerpf(-(base_f + 0.7 * maxf(0.0, -rr) * act), pose_elbow_r, pw)
 		_arm_skin(0)
 		_arm_skin(1)
 	# дальняя от камеры рука (кукла зеркалится целиком, поэтому всегда одна и та же) спрятана за телом и плащом
@@ -746,8 +799,10 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 	var near_arm: Node2D = sleeves[0]
 	if far_arm.get_index() != 0:
 		chest.move_child(far_arm, 0)
-	if near_arm.get_index() < 3:
-		chest.move_child(near_arm, chest.get_child_count() - 2)
+	# обычно ближняя рука лежит сразу под головой; в позе — поверх неё, иначе поднятая лапа прячется за головой
+	var near_at: int = chest.get_child_count() - (1 if pw > 0.5 else 2)
+	if near_arm.get_index() != near_at:
+		chest.move_child(near_arm, near_at)
 	if not clothes:
 		_nude_skin()
 	# --- голова: отстаёт от корпуса, держит горизонт ---
@@ -780,10 +835,11 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 					idle_head = 0.03 * e
 	else:
 		idle_left = 0.0
-	chest.position = WAIST + Vector2(0.0, -idle_shr)
+	chest.position = WAIST + Vector2(0.0, -idle_shr * (1.0 - pw))
 	for e2 in eyes:
 		e2.position.x = _eye_base_x(e2) + idle_eye
-	head.rotation = -0.55 * (torso.rotation + chest.rotation) + idle_head + 0.018 * sin(phase * 2.0 + 1.0) * act + 0.02 * sin(t * 0.9) * calm
+	var head_free: float = -0.55 * (torso.rotation + chest.rotation) + idle_head + 0.018 * sin(phase * 2.0 + 1.0) * act + 0.02 * sin(t * 0.9) * calm
+	head.rotation = lerpf(head_free, pose_head, pw)
 	# --- глаза: моргание ---
 	blink_in -= delta
 	if blink_in <= 0.0 and blink_t < 0.0:
@@ -812,6 +868,96 @@ func animate(delta: float, speed_ratio: float, face: float, in_air: bool) -> voi
 	for c in cloths:
 		c.turning = clampf(turn_cool / 0.25, 0.0, 1.0)
 		c.step(self, delta, wind_f, vl_loc, al_loc)
+
+
+# ------------------------------------------------------------------ позы из редактора поз
+
+## Обычная стойка: с неё начинается любое новое движение в редакторе.
+static func pose_neutral() -> Dictionary:
+	return {
+		"pose_pelvis": Vector2.ZERO, "pose_torso": 0.0, "pose_chest": 0.0, "pose_head": 0.0,
+		"pose_arm_l": 0.0, "pose_elbow_l": -0.05, "pose_arm_r": -0.05, "pose_elbow_r": -0.05,
+		"pose_foot_l": Vector2.ZERO, "pose_foot_l_rot": 0.0, "pose_foot_r": Vector2.ZERO, "pose_foot_r_rot": 0.0,
+	}
+
+
+## Где окажется щиколотка: x — от своего бедра, y — над полом (вверх — минус).
+## Стопа перекатывается, как при ходьбе: на носок — вокруг носка, на пятку — вокруг пятки.
+func pose_ankle(foot: Vector2, f: float) -> Vector2:
+	var xc: float = -16.0 * clampf(-f / 0.25, 0.0, 1.0) + 38.0 * clampf(f / 0.5, 0.0, 1.0)
+	var rx: float = xc * cos(f) - FOOT_H * sin(f)
+	var ry: float = xc * sin(f) + FOOT_H * cos(f)
+	return Vector2(foot.x + xc - rx, -ry - maxf(foot.y, 0.0))
+
+
+## Текущая поза куклы в виде словаря (ключи — POSE_KEYS).
+func pose_values() -> Dictionary:
+	var d := {}
+	for key in POSE_KEYS:
+		d[key] = get(key)
+	return d
+
+
+## Поставить куклу в позу из словаря. Чего в словаре нет, остаётся как было.
+func pose_apply(values: Dictionary) -> void:
+	for key in POSE_KEYS:
+		if values.has(key):
+			set(key, values[key])
+
+
+## Держать позу без перехода (так работает редактор поз). pose_hold(false) — сразу вернуть обычное движение.
+func pose_hold(on: bool) -> void:
+	if pose_player:
+		pose_player.pause()
+	pose_target = 1.0 if on else 0.0
+	pose_weight = pose_target
+
+
+## Проиграть движение: кукла плавно входит в него, а после конца сама возвращается к обычному движению.
+## Зацикленное движение играет, пока не вызвать pose_stop().
+func pose_play(anim: Animation, blend_in: float = 0.12, blend_out: float = 0.25) -> void:
+	if anim == null:
+		return
+	if pose_player == null:
+		pose_player = AnimationPlayer.new()
+		pose_player.name = "PosePlayer"
+		add_child(pose_player)
+		pose_player.add_animation_library("", AnimationLibrary.new())
+		pose_player.animation_finished.connect(_on_pose_anim_finished)
+	var lib: AnimationLibrary = pose_player.get_animation_library("")
+	pose_player.stop()
+	if lib.has_animation("pose"):
+		lib.remove_animation("pose")
+	lib.add_animation("pose", anim)
+	pose_in = blend_in
+	pose_out = blend_out
+	pose_target = 1.0
+	pose_player.play("pose")
+	pose_player.advance(0.0)        # первая поза встаёт сразу, а не через кадр
+
+
+## Проиграть движение по имени файла из папки animations/fuki (без «.tres»). Возвращает false, если файла нет.
+func play_pose(anim_name: String) -> bool:
+	var path: String = POSE_DIR + anim_name + ".tres"
+	if not ResourceLoader.exists(path):
+		return false
+	var anim: Animation = load(path) as Animation
+	if anim == null:
+		return false
+	pose_play(anim)
+	return true
+
+
+## Остановить движение: кукла плавно возвращается к обычному.
+func pose_stop() -> void:
+	if pose_player:
+		pose_player.pause()
+	pose_target = 0.0
+
+
+func _on_pose_anim_finished(_anim_name: StringName) -> void:
+	pose_target = 0.0
+	pose_finished.emit()
 
 
 ## Лоскут ткани: сетка частиц (Верле). Верхние строки держатся на родителе, нижние свободны.

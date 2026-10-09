@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://vector_puppet/vector_puppet_test.gd" id="1_vp"]
+
+[node name="VectorPuppetTest" type="Node2D"]
+script = ExtResource("1_vp")
