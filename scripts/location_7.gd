@@ -4,7 +4,9 @@ extends Node2D
 ##   mid  — стены, окна, стеллаж и тумба;
 ##   near — столы, компьютеры, стопки бумаг и кошка за столом (на одной глубине с полом, по которому идёт Фуки).
 ## За окнами гроза: молнии сверкают сами, дождь включается кнопкой.
-## Клавиши: 4 — звуки, 5 или M — музыка, 7 — дождь за окном.
+## Гибридный свет (кнопка «8 · Гибрид»): фон остаётся как нарисован, Фуки подкрашена в тон комнаты,
+## живых источников два — монитор и луч из окна. «0 · Настроить свет» — таскать источники мышью (см. hybrid_light.gd).
+## Клавиши: 4 — звуки, 5 или M — музыка, 7 — дождь за окном, 8 — гибридный свет, 0 — настройка света.
 
 signal flash_started   ## Молния сверкнула (по этому сигналу играет гром)
 
@@ -24,6 +26,14 @@ const LAYERS := [
 	["near", 1.0],
 ]
 ## Стёкла окон по ширине, в пикселях картинки среднего слоя: [левый край, правый край].
+## Гибридный свет, пока нет сохранённого файла lighting/location_7.json: тон для Фуки и два источника.
+const HYBRID_DEFAULT := {
+	"tone": [0.50, 0.57, 0.84],
+	"lights": [
+		{"x": 350.0, "y": 575.0, "color": [0.75, 0.90, 1.0], "energy": 2.6, "size": 1.5, "flicker": 0.15, "bg": false},   # монитор
+		{"x": 690.0, "y": 470.0, "color": [0.70, 0.80, 1.0], "energy": 2.0, "size": 2.4, "flicker": 0.0, "bg": false},    # луч из окна
+	],
+}
 const WINDOWS := [[1200.0, 1450.0], [1546.0, 1796.0]]
 ## Где на картинке города чистое небо: [левый край, правый край, самая низкая точка молнии].
 const SKY_ZONES := [[1262.0, 1400.0, 360.0], [1505.0, 1602.0, 430.0]]
@@ -51,6 +61,9 @@ var flash_timer: float = 0.0
 var sounds_button: Button
 var music_button: Button
 var rain_button: Button
+var hybrid: HybridLight
+var hybrid_button: Button
+var light_edit_button: Button
 
 
 func _ready() -> void:
@@ -81,6 +94,10 @@ func _ready() -> void:
 	add_child(audio)
 	var list: Array[Player] = [player]
 	audio.setup(list, self)           # гром играет по сигналу flash_started
+	hybrid = HybridLight.new()
+	hybrid.name = "HybridLight"
+	add_child(hybrid)
+	hybrid.setup(player, "location_7", HYBRID_DEFAULT)
 	_build_menu()
 	Transition.add_scene_arrows(self, 1)
 	Transition.fade_in(self)
@@ -288,6 +305,19 @@ func _build_menu() -> void:
 	sounds_button = _toggle(bar, "4 · Звуки", true, func(on: bool): audio.call("set_sounds", on))
 	music_button = _toggle(bar, "5 · Музыка", true, func(on: bool): audio.call("set_music", on))
 	rain_button = _toggle(bar, "7 · Дождь", false, _set_rain)
+	hybrid_button = _toggle(bar, "8 · Гибрид", false, func(on: bool): hybrid.set_enabled(on))
+	light_edit_button = Button.new()
+	light_edit_button.text = "0 · Настроить свет"
+	light_edit_button.toggle_mode = true
+	light_edit_button.focus_mode = Control.FOCUS_NONE
+	light_edit_button.add_theme_font_size_override("font_size", 20)
+	light_edit_button.toggled.connect(func(on: bool): hybrid.set_editing(on))
+	bar.add_child(light_edit_button)
+	# гибрид может выключиться и сам (если включить общий «Свет»): кнопки должны это показать
+	hybrid.enabled_changed.connect(func(on: bool):
+		hybrid_button.set_pressed_no_signal(on)
+		GameSettings.set_for(hybrid_button.text, on))
+	hybrid.editing_changed.connect(func(on: bool): light_edit_button.set_pressed_no_signal(on))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -299,3 +329,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				music_button.button_pressed = not music_button.button_pressed
 			KEY_7, KEY_KP_7:
 				rain_button.button_pressed = not rain_button.button_pressed
+			KEY_8, KEY_KP_8:
+				hybrid_button.button_pressed = not hybrid_button.button_pressed
+			KEY_0, KEY_KP_0:
+				light_edit_button.button_pressed = not light_edit_button.button_pressed
