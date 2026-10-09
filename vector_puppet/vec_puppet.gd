@@ -1,5 +1,7 @@
 class_name VecPuppet
 extends Node2D
+
+signal pose_finished                ## Движение из редактора поз доиграло до конца
 ## Векторная кукла целиком, вид 3/4 (лицом вправо). Проба: пока только стоит и сгибает суставы,
 ## ходьбы, бега и плаща на физике у неё нет — этим по-прежнему занимается FukiPuppet.
 ##
@@ -10,6 +12,9 @@ extends Node2D
 ##   • сами части остаются лежать рядом в порядке «что выше, то и перекрывает» (STACK),
 ##     а каждая кость тянет свои части за собой (RemoteTransform2D).
 ## Начало координат куклы — точка земли между стопами. Единицы — как на листе: рост 1500.
+##
+## Кукла понимает позы из редактора поз (pose_editor): те же величины pose_* и те же файлы
+## движений, что у FukiPuppet. Включается флагом pose_enabled; см. раздел «позы» внизу.
 
 const PARTS: PackedScene = preload("res://vector_puppet/fuki_34_parts.tscn")
 const ARC_OVERLAP := 0.04      ## На сколько (в радианах) дуга шва в локте заходит под соседние куски
@@ -80,6 +85,36 @@ var bends: Array = []               ## швы рукавов в локтях: [{
 var near_arm: Array[Node2D] = []    ## части ближней руки с рукавом, снизу вверх
 var near_arm_front: bool = false
 
+# --- поза из редактора поз. Имена и смысл величин те же, что у FukiPuppet: один файл движения подходит обеим куклам.
+const POSE_KEYS: Array[String] = [
+	"pose_pelvis", "pose_torso", "pose_chest", "pose_head",
+	"pose_arm_l", "pose_elbow_l", "pose_arm_r", "pose_elbow_r",
+	"pose_foot_l", "pose_foot_l_rot", "pose_foot_r", "pose_foot_r_rot",
+]
+const POSE_DIR := "res://animations/fuki/"
+const POSE_LEG := 178.0                     ## Длина ноги у FukiPuppet: в её единицах записаны сдвиги таза и стоп
+const SIDES: Array[String] = ["near", "far"]
+var pose_enabled: bool = false              ## true — кукла каждый кадр встаёт в позу из величин pose_*
+var pose_pelvis: Vector2 = Vector2.ZERO     ## Таз: сдвиг (x — вперёд, y — вниз)
+var pose_torso: float = 0.0                 ## Наклон всего корпуса от таза, радианы
+var pose_chest: float = 0.0                 ## Наклон корпуса в талии
+var pose_head: float = 0.0                  ## Наклон головы
+var pose_arm_l: float = 0.0                 ## Ближняя рука: поворот в плече
+var pose_elbow_l: float = 0.0               ## Ближняя рука: сгиб в локте
+var pose_arm_r: float = 0.0                 ## Дальняя рука
+var pose_elbow_r: float = 0.0
+var pose_foot_l: Vector2 = Vector2.ZERO     ## Ближняя стопа: x — вперёд от своего места, y — высота над полом
+var pose_foot_l_rot: float = 0.0            ## Наклон стопы (плюс — на носок, минус — на пятку)
+var pose_foot_r: Vector2 = Vector2.ZERO     ## Дальняя стопа
+var pose_foot_r_rot: float = 0.0
+var pose_weight: float = 0.0                ## 0 — стойка, 1 — кукла целиком в позе
+var pose_target: float = 0.0
+var pose_in: float = 0.12
+var pose_out: float = 0.25
+var pose_player: AnimationPlayer
+var pose_unit: float = 1.0                  ## Сколько единиц листа в одной единице позы
+var legs_geo: Array = []                    ## По ноге: длины звеньев, углы в стойке, место щиколотки и носка
+
 
 func _ready() -> void:
 	parts = PARTS.instantiate()
@@ -121,6 +156,17 @@ func _ready() -> void:
 		var n: Node2D = parts.get_node_or_null(part_name)
 		if n:
 			near_arm.append(n)
+	for side in SIDES:                            # размеры ног для поз
+		var hip: Vector2 = pivots["pivot_hip_" + side]
+		var knee: Vector2 = pivots["pivot_knee_" + side]
+		var ankle: Vector2 = pivots["pivot_ankle_" + side]
+		var toe: Vector2 = pivots.get("pivot_toe_" + side, ankle + Vector2(55.0, -ankle.y))
+		legs_geo.append({
+			"hip_off": hip - rest["pelvis"], "v1": knee - hip, "v2": ankle - knee,
+			"l1": (knee - hip).length(), "l2": (ankle - knee).length(),
+			"ankle": ankle, "foot_h": -ankle.y, "toe_dx": toe.x - ankle.x, "heel_dx": -0.5 * (toe.x - ankle.x),
+		})
+	pose_unit = -(pivots["pivot_hip_near"].y + pivots["pivot_hip_far"].y) * 0.5 / POSE_LEG
 	set_eyes("open")
 
 
@@ -206,7 +252,9 @@ func set_near_arm_front(front: bool) -> void:
 			parts.move_child(n, part_nodes["head"].get_index())    # сразу под голову, в том же порядке
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if pose_enabled:
+		_apply_pose(delta)
 	set_near_arm_front(absf(rad_to_deg(bones["arm_near_upper"].rotation)) > ARM_FRONT_DEG)
 	for b in bends:
 		_update_bend(b)
@@ -249,3 +297,143 @@ func _update_bend(b: Dictionary) -> void:
 				pts.append((tangent * lo).rotated(lerpf(from, to, float(k) / steps)))
 		mi.mesh = VecMesh.build(pts, PackedInt32Array(), PackedInt32Array([pts.size()]), col)
 		mi.visible = mi.mesh != null
+
+
+# ------------------------------------------------------------------ позы из редактора поз
+
+## Стойка: с неё начинается любое новое движение.
+static func pose_neutral() -> Dictionary:
+	return {
+		"pose_pelvis": Vector2.ZERO, "pose_torso": 0.0, "pose_chest": 0.0, "pose_head": 0.0,
+		"pose_arm_l": 0.0, "pose_elbow_l": 0.0, "pose_arm_r": 0.0, "pose_elbow_r": 0.0,
+		"pose_foot_l": Vector2.ZERO, "pose_foot_l_rot": 0.0, "pose_foot_r": Vector2.ZERO, "pose_foot_r_rot": 0.0,
+	}
+
+
+func pose_values() -> Dictionary:
+	var d := {}
+	for key in POSE_KEYS:
+		d[key] = get(key)
+	return d
+
+
+func pose_apply(values: Dictionary) -> void:
+	for key in POSE_KEYS:
+		if values.has(key):
+			set(key, values[key])
+
+
+## Держать позу без перехода (так работает редактор поз). pose_hold(false) — сразу вернуть стойку.
+func pose_hold(on: bool) -> void:
+	if pose_player:
+		pose_player.pause()
+	pose_target = 1.0 if on else 0.0
+	pose_weight = pose_target
+
+
+## Проиграть движение: кукла плавно входит в него, а после конца сама возвращается в стойку.
+func pose_play(anim: Animation, blend_in: float = 0.12, blend_out: float = 0.25) -> void:
+	if anim == null:
+		return
+	pose_enabled = true
+	if pose_player == null:
+		pose_player = AnimationPlayer.new()
+		pose_player.name = "PosePlayer"
+		add_child(pose_player)
+		pose_player.add_animation_library("", AnimationLibrary.new())
+		pose_player.animation_finished.connect(_on_pose_anim_finished)
+	var lib: AnimationLibrary = pose_player.get_animation_library("")
+	pose_player.stop()
+	if lib.has_animation("pose"):
+		lib.remove_animation("pose")
+	lib.add_animation("pose", anim)
+	pose_in = blend_in
+	pose_out = blend_out
+	pose_target = 1.0
+	pose_player.play("pose")
+	pose_player.advance(0.0)
+
+
+## Проиграть движение по имени файла из папки animations/fuki (без «.tres»).
+func play_pose(anim_name: String) -> bool:
+	var path: String = POSE_DIR + anim_name + ".tres"
+	if not ResourceLoader.exists(path):
+		return false
+	var anim: Animation = load(path) as Animation
+	if anim == null:
+		return false
+	pose_play(anim)
+	return true
+
+
+func pose_stop() -> void:
+	if pose_player:
+		pose_player.pause()
+	pose_target = 0.0
+
+
+func _on_pose_anim_finished(_anim_name: StringName) -> void:
+	pose_target = 0.0
+	pose_finished.emit()
+
+
+## Где окажется щиколотка ноги i (0 — ближняя, 1 — дальняя) в координатах куклы.
+## Стопа перекатывается: на носок — вокруг носка, на пятку — вокруг пятки.
+func pose_ankle(i: int, foot: Vector2, f: float) -> Vector2:
+	var g: Dictionary = legs_geo[i]
+	var xc: float = g["heel_dx"] * clampf(-f / 0.25, 0.0, 1.0) + g["toe_dx"] * clampf(f / 0.5, 0.0, 1.0)
+	var rx: float = xc * cos(f) - g["foot_h"] * sin(f)
+	var ry: float = xc * sin(f) + g["foot_h"] * cos(f)
+	return Vector2(g["ankle"].x + foot.x * pose_unit + xc - rx, -ry - maxf(foot.y, 0.0) * pose_unit)
+
+
+## Ставит кости по величинам pose_*. Ноги — обратной кинематикой: стопы главнее таза,
+## если нога не достаёт до своей точки, таз опускается.
+func _apply_pose(delta: float) -> void:
+	if pose_weight != pose_target:
+		var blend_time: float = pose_in if pose_target > pose_weight else pose_out
+		pose_weight = move_toward(pose_weight, pose_target, delta / maxf(blend_time, 0.001))
+	var w: float = smoothstep(0.0, 1.0, pose_weight)
+	var k: float = pose_unit
+	var body_rot: float = pose_torso * w
+	var px: float = pose_pelvis.x * k * w
+	var ty: float = pose_pelvis.y * k * w
+	var feet: Array[Vector2] = [pose_foot_l * w, pose_foot_r * w]
+	var rots: Array[float] = [pose_foot_l_rot * w, pose_foot_r_rot * w]
+	var targets: Array[Vector2] = []
+	for i in 2:
+		var g: Dictionary = legs_geo[i]
+		var a: Vector2 = pose_ankle(i, feet[i], rots[i])
+		targets.append(a)
+		var reach: float = g["l1"] + g["l2"] - 0.05
+		var hip0: Vector2 = rest["pelvis"] + Vector2(px, 0.0) + (g["hip_off"] as Vector2).rotated(body_rot)
+		var dx: float = clampf(a.x - hip0.x, -reach * 0.96, reach * 0.96)
+		ty = maxf(ty, a.y - sqrt(reach * reach - dx * dx) - hip0.y)
+	ty = minf(ty, 125.0 * k)
+	var pelvis: Node2D = bones["pelvis"]
+	pelvis.position = rest["pelvis"] + Vector2(px, ty)
+	pelvis.rotation = body_rot
+	bones["torso"].rotation = pose_chest * w
+	bones["head"].rotation = pose_head * w
+	bones["arm_near_upper"].rotation = pose_arm_l * w
+	bones["arm_near_fore"].rotation = pose_elbow_l * w
+	bones["arm_far_upper"].rotation = pose_arm_r * w
+	bones["arm_far_fore"].rotation = pose_elbow_r * w
+	for i in 2:
+		var g: Dictionary = legs_geo[i]
+		var side: String = SIDES[i]
+		var hip: Vector2 = pelvis.position + (g["hip_off"] as Vector2).rotated(body_rot)
+		var t: Vector2 = targets[i] - hip
+		var l1: float = g["l1"]
+		var l2: float = g["l2"]
+		var d: float = clampf(t.length(), absf(l1 - l2) + 1.0, l1 + l2 - 0.01)
+		var base: float = t.angle()
+		var alpha: float = acos(clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0))
+		var upper: float = base - alpha                      # колено смотрит вперёд
+		var knee: Vector2 = Vector2.from_angle(upper) * l1
+		var lower: float = (Vector2.from_angle(base) * d - knee).angle()
+		var th: float = upper - (g["v1"] as Vector2).angle()   # поворот бедра и голени в координатах куклы
+		var sh: float = lower - (g["v2"] as Vector2).angle()
+		bones["leg_%s_thigh" % side].rotation = th - body_rot
+		bones["leg_%s_shin" % side].rotation = sh - th
+		bones["foot_%s" % side].rotation = rots[i] - sh

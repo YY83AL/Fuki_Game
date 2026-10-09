@@ -4,6 +4,7 @@ extends Node2D
 ##
 ## Что умеет:
 ##   • тянуть мышью точки на суставах кошки — она встаёт в позу, плащ и рукава живут на физике;
+##   • переключаться между игровой куклой (FukiPuppet) и векторной (VecPuppet): позы и файлы у них общие;
 ##   • хранить список поз и время между ними;
 ##   • показывать движение («Играть») так, как оно будет выглядеть в игре: с входом из обычной стойки;
 ##   • сохранять движение в папку animations/fuki в родном формате Godot (Animation, файл .tres).
@@ -12,14 +13,14 @@ extends Node2D
 ## Клавиши: Пробел — играть / стоп; F — согнуть локоть в другую сторону (навести мышь на лапу или локоть).
 
 const ANIM_DIR := "res://animations/fuki/"
-const PUPPET_SCALE := 0.85                    ## Кошка в редакторе крупнее, чем в игре, чтобы удобно попадать в точки
+const RigFuki := preload("res://pose_editor/rig_fuki.gd")
+const RigVec := preload("res://pose_editor/rig_vec.gd")
+const PUPPET_NAMES: Array[String] = ["Игровая кукла", "Векторная кукла (проба)"]
 const GROUND := Vector2(450.0, 655.0)         ## Точка на полу, где стоит кошка
 const PANEL_W := 340.0
 const KEY_EASE := -2.0                        ## Переход между позами: плавный разгон и торможение
 const HANDLE_R := 9.0
 const BG := Color("cfc3ae")
-const FOOT_SNAP := 6.0                        ## Ближе этого к полу стопа «прилипает» к нему
-const TOE := Vector2(40.0, 24.0)              ## Носок относительно щиколотки, в точках листа
 
 const HANDLE_NAMES := {
 	"pelvis": "Таз", "waist": "Поясница: наклон корпуса", "neck": "Грудь", "head": "Голова",
@@ -30,7 +31,10 @@ const HANDLE_NAMES := {
 }
 const HANDLE_ORDER: Array[String] = ["foot_1", "toe_1", "elbow_1", "paw_1", "pelvis", "waist", "neck", "head", "foot_0", "toe_0", "elbow_0", "paw_0"]
 
-var puppet: FukiPuppet
+var puppet: Node2D               ## Кукла на экране: FukiPuppet или VecPuppet
+var rig                          ## «Поводок» к ней: где точки, что делать при перетаскивании (rig_fuki.gd, rig_vec.gd)
+var kind: int = 0                ## 0 — игровая кукла, 1 — векторная
+var puppet_list: OptionButton
 var overlay: Node2D
 var poses: Array = []            ## [{ "v": словарь позы, "time": секунд до следующей позы }]
 var cur: int = 0
@@ -84,10 +88,7 @@ func _ready() -> void:
 		fps.visible = false
 		hidden_panels.append(fps)
 
-	puppet = load("res://scenes/fuki_puppet.tscn").instantiate()
-	puppet.frame_scale = PUPPET_SCALE
-	puppet.position = GROUND
-	add_child(puppet)
+	_set_puppet(0)
 
 	overlay = Node2D.new()
 	overlay.name = "Handles"
@@ -98,6 +99,30 @@ func _ready() -> void:
 	_build_panel()
 	_new_animation()
 	_refresh_open_list()
+
+
+## Ставит на экран выбранную куклу. Позы остаются: у обеих кукол они записаны одними и теми же величинами.
+func _set_puppet(new_kind: int) -> void:
+	if puppet:
+		remove_child(puppet)
+		puppet.queue_free()
+	kind = new_kind
+	rig = RigVec.new() if kind == 1 else RigFuki.new()
+	puppet = rig.make()
+	puppet.position = GROUND
+	add_child(puppet)
+	move_child(puppet, 2)                 # над фоном и линией пола, под точками и подсказкой
+	puppet.connect("pose_finished", _on_play_finished)
+	hover = ""
+	drag = ""
+	handle_pos.clear()
+
+
+func _on_puppet_selected(index: int) -> void:
+	if index == kind:
+		return
+	_set_puppet(index)
+	_say("На экране: %s. Позы те же, их можно сохранять и открывать на любой из кукол." % PUPPET_NAMES[index].to_lower())
 
 
 func _exit_tree() -> void:
@@ -155,6 +180,14 @@ func _build_panel() -> void:
 	title = _label(box, "", 14)
 	title.add_theme_color_override("font_color", Color(1.0, 0.72, 0.3))
 
+	puppet_list = OptionButton.new()
+	puppet_list.focus_mode = Control.FOCUS_NONE
+	for n in PUPPET_NAMES:
+		puppet_list.add_item(n)
+	puppet_list.item_selected.connect(_on_puppet_selected)
+	box.add_child(puppet_list)
+	edit_controls.append(puppet_list)
+
 	_label(box, "Название движения")
 	name_edit = LineEdit.new()
 	name_edit.placeholder_text = "например: взмах"
@@ -173,7 +206,7 @@ func _build_panel() -> void:
 	box.add_child(HSeparator.new())
 	_label(box, "Позы по порядку")
 	pose_list = ItemList.new()
-	pose_list.custom_minimum_size = Vector2(0.0, 150.0)
+	pose_list.custom_minimum_size = Vector2(0.0, 118.0)
 	pose_list.focus_mode = Control.FOCUS_NONE
 	pose_list.item_selected.connect(_on_pose_selected)
 	box.add_child(pose_list)
@@ -279,7 +312,7 @@ func _may_discard(what: String) -> bool:
 func _new_animation() -> void:
 	if not _may_discard("new"):
 		return
-	poses = [{"v": FukiPuppet.pose_neutral(), "time": 0.3}]
+	poses = [{"v": rig.neutral(), "time": 0.3}]
 	cur = 0
 	name_edit.text = ""
 	loop_check.set_pressed_no_signal(false)
@@ -314,7 +347,7 @@ func _delete_pose() -> void:
 
 
 func _reset_pose() -> void:
-	poses[cur]["v"] = FukiPuppet.pose_neutral()
+	poses[cur]["v"] = rig.neutral()
 	_mark_dirty()
 
 
@@ -368,7 +401,7 @@ func read_animation(anim: Animation) -> void:
 		times.append(0.0)
 	poses = []
 	for i in times.size():
-		var v: Dictionary = FukiPuppet.pose_neutral()
+		var v: Dictionary = rig.neutral()
 		for key in track_of:
 			v[key] = anim.value_track_interpolate(track_of[key], times[i])
 		var next_t: float = times[i + 1] if i + 1 < times.size() else anim.length
@@ -436,16 +469,14 @@ func _toggle_play() -> void:
 	for c in edit_controls:
 		_set_enabled(c, false)
 	play_button.text = "■  Стоп (Пробел)"
-	puppet.pose_hold(false)                # как в игре: движение начинается из обычной стойки
-	puppet.pose_play(anim)
-	if not puppet.pose_finished.is_connected(_on_play_finished):
-		puppet.pose_finished.connect(_on_play_finished)
+	puppet.call("pose_hold", false)        # как в игре: движение начинается из обычной стойки
+	puppet.call("pose_play", anim)
 
 
 func _on_play_finished() -> void:
 	if playing:
 		var id: int = play_id
-		await get_tree().create_timer(puppet.pose_out + 0.15).timeout     # даём кошке вернуться в обычную стойку
+		await get_tree().create_timer(float(puppet.get("pose_out")) + 0.15).timeout     # даём кошке вернуться в обычную стойку
 		if playing and id == play_id:
 			_stop_play()
 
@@ -476,35 +507,9 @@ func _process(delta: float) -> void:
 		play_time += delta
 		var shown: float = fmod(play_time, play_len) if loop_check.button_pressed else minf(play_time, play_len)
 		_say("Идёт показ: %.2f из %.2f с" % [shown, play_len])
-	else:
-		puppet.pose_hold(true)
-		puppet.pose_apply(poses[cur]["v"])
-	puppet.animate(delta, 0.0, 1.0, false)
-	_update_handles()
+	rig.frame(delta, poses[cur]["v"], playing)
+	handle_pos = {} if playing else rig.handles()
 	overlay.queue_redraw()
-
-
-## Места точек берутся с самой куклы, поэтому точка всегда сидит на суставе.
-func _update_handles() -> void:
-	handle_pos.clear()
-	if playing:
-		return
-	handle_pos["pelvis"] = puppet.torso.global_position
-	handle_pos["waist"] = puppet.chest.global_position
-	handle_pos["neck"] = puppet.head.global_position
-	handle_pos["head"] = puppet.head.global_transform * Vector2(0.0, -205.0)
-	for j in 2:
-		if j >= puppet.sleeve_cloths.size():
-			continue
-		var sl: Node2D = puppet.sleeves[j]
-		var sc = puppet.sleeve_cloths[j]
-		var e0: Vector2 = sc.elbow_pt
-		var c0: Vector2 = sc.cuff_rest - sc.elbow_pt
-		handle_pos["elbow_%d" % j] = sl.global_transform * e0
-		handle_pos["paw_%d" % j] = sl.global_transform * (e0 + c0.rotated(sc.elbow_ang))
-	for i in 2:
-		handle_pos["foot_%d" % i] = puppet.feet[i].global_position
-		handle_pos["toe_%d" % i] = puppet.feet[i].global_transform * TOE
 
 
 func _draw_handles() -> void:
@@ -551,7 +556,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.physical_keycode == KEY_F and not playing:
 			var id: String = drag if drag != "" else hover
 			if id.begins_with("paw_") or id.begins_with("elbow_"):
-				_flip_elbow(int(id.right(1)))
+				rig.flip_elbow(poses[cur]["v"], int(id.right(1)))
+				_mark_dirty()
 		return
 	if playing:
 		return
@@ -567,105 +573,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		var m2: Vector2 = overlay.make_input_local(event).position
 		if drag != "":
-			_drag_to(drag, m2 + drag_off)
+			rig.drag(poses[cur]["v"], drag, m2 + drag_off)
 			_mark_dirty()
 		else:
 			hover = _pick(m2)
-
-
-func _unwrap(old: float, new_value: float) -> float:
-	return old + wrapf(new_value - old, -PI, PI)
-
-
-func _drag_to(id: String, m: Vector2) -> void:
-	var v: Dictionary = poses[cur]["v"]
-	var flip_inv: Transform2D = puppet.flip.global_transform.affine_inverse()
-	var mf: Vector2 = flip_inv * m                                   # мышь в координатах куклы: пол — y = 0
-	match id:
-		"pelvis":
-			var rest: Vector2 = FukiPuppet.HIP - Vector2(FukiPuppet.OX, FukiPuppet.OY)
-			var d: Vector2 = mf - rest
-			v["pose_pelvis"] = Vector2(clampf(d.x, -90.0, 90.0), clampf(d.y, -150.0, 125.0))
-		"waist":
-			var a: float = (mf - puppet.torso.position).angle() + PI * 0.5
-			v["pose_torso"] = clampf(_unwrap(v["pose_torso"], a), -0.7, 0.7)
-		"neck":
-			var q: Vector2 = puppet.torso.global_transform.affine_inverse() * m - FukiPuppet.WAIST
-			var a2: float = q.angle() - (FukiPuppet.NECK - FukiPuppet.CH).angle()
-			v["pose_chest"] = clampf(_unwrap(v["pose_chest"], a2), -0.8, 0.8)
-		"head":
-			var q2: Vector2 = puppet.chest.global_transform.affine_inverse() * m - puppet.head.position
-			v["pose_head"] = clampf(_unwrap(v["pose_head"], q2.angle() + PI * 0.5), -0.9, 0.9)
-		"elbow_0", "elbow_1":
-			var j: int = int(id.right(1))
-			var key: String = "pose_arm_l" if j == 0 else "pose_arm_r"
-			var q3: Vector2 = puppet.chest.global_transform.affine_inverse() * m - puppet.sleeves[j].position
-			v[key] = _unwrap(v[key], q3.angle() - (puppet.sleeve_cloths[j].elbow_pt as Vector2).angle())
-		"paw_0", "paw_1":
-			var j2: int = int(id.right(1))
-			var target: Vector2 = puppet.chest.global_transform.affine_inverse() * m - puppet.sleeves[j2].position
-			var ek: String = "pose_elbow_l" if j2 == 0 else "pose_elbow_r"
-			_solve_arm(j2, target, _elbow_side(j2, float(v[ek])))
-		"foot_0", "foot_1":
-			var i: int = int(id.right(1))
-			var fk: String = "pose_foot_l" if i == 0 else "pose_foot_r"
-			var f: float = v[fk + "_rot"]
-			var hip_x: float = (FukiPuppet.HIP_L.x if i == 0 else FukiPuppet.HIP_R.x) - FukiPuppet.OX
-			var zero: Vector2 = puppet.pose_ankle(Vector2.ZERO, f)       # где щиколотка при нулевых величинах
-			var up: float = clampf(zero.y - mf.y, 0.0, 120.0)
-			if up < FOOT_SNAP:
-				up = 0.0
-			var px: float = (v["pose_pelvis"] as Vector2).x
-			var x: float = clampf(mf.x - hip_x - zero.x, px - FukiPuppet.LEG_REACH * 0.9, px + FukiPuppet.LEG_REACH * 0.9)
-			v[fk] = Vector2(x, up)
-		"toe_0", "toe_1":
-			var i2: int = int(id.right(1))
-			var rk: String = "pose_foot_l_rot" if i2 == 0 else "pose_foot_r_rot"
-			var fk2: String = "pose_foot_l" if i2 == 0 else "pose_foot_r"
-			var hip_x2: float = (FukiPuppet.HIP_L.x if i2 == 0 else FukiPuppet.HIP_R.x) - FukiPuppet.OX
-			# Угол считаем от щиколотки при ровной стопе: она не двигается, пока стопа перекатывается.
-			var flat: Vector2 = Vector2(hip_x2 + (v[fk2] as Vector2).x, -FukiPuppet.FOOT_H - (v[fk2] as Vector2).y)
-			var a3: float = (mf - flat).angle() - TOE.angle()
-			v[rk] = clampf(_unwrap(v[rk], a3), -0.5, 1.1)
-
-
-## Рука из двух звеньев: по месту лапы находит поворот плеча и сгиб локтя. side — в какую сторону смотрит локоть.
-func _solve_arm(j: int, target: Vector2, side: float) -> void:
-	var v: Dictionary = poses[cur]["v"]
-	var sc = puppet.sleeve_cloths[j]
-	var e0: Vector2 = sc.elbow_pt
-	var c0: Vector2 = sc.cuff_rest - sc.elbow_pt
-	var l1: float = e0.length()
-	var l2: float = c0.length()
-	var d: float = clampf(target.length(), absf(l1 - l2) + 1.0, l1 + l2 - 0.5)
-	var base: float = target.angle()
-	var alpha: float = acos(clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0))
-	var upper: float = base - side * alpha                     # плечо отклоняется от линии «плечо — лапа» в сторону локтя
-	var a: float = upper - e0.angle()
-	var elbow: Vector2 = Vector2.from_angle(upper) * l1
-	var b: float = wrapf((Vector2.from_angle(base) * d - elbow).angle() - c0.angle() - a, -PI, PI)
-	var ak: String = "pose_arm_l" if j == 0 else "pose_arm_r"
-	var ek: String = "pose_elbow_l" if j == 0 else "pose_elbow_r"
-	v[ak] = _unwrap(v[ak], a)
-	v[ek] = b
-
-
-## В какую сторону сейчас согнут локоть: -1 или 1 (в покое рукав чуть согнут, поэтому считаем настоящий угол).
-func _elbow_side(j: int, elbow_value: float) -> float:
-	var sc = puppet.sleeve_cloths[j]
-	var bend: float = wrapf(elbow_value + (sc.cuff_rest - sc.elbow_pt).angle() - (sc.elbow_pt as Vector2).angle(), -PI, PI)
-	return -1.0 if bend <= 0.0 else 1.0
-
-
-func _flip_elbow(j: int) -> void:
-	var v: Dictionary = poses[cur]["v"]
-	var sc = puppet.sleeve_cloths[j]
-	var ak: String = "pose_arm_l" if j == 0 else "pose_arm_r"
-	var ek: String = "pose_elbow_l" if j == 0 else "pose_elbow_r"
-	var e0: Vector2 = sc.elbow_pt
-	var c0: Vector2 = sc.cuff_rest - sc.elbow_pt
-	var a: float = v[ak]
-	var b: float = v[ek]
-	var target: Vector2 = e0.rotated(a) + c0.rotated(a + b)       # где лапа сейчас
-	_solve_arm(j, target, -_elbow_side(j, b))
-	_mark_dirty()
